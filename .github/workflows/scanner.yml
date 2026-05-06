@@ -1,0 +1,22 @@
+name: MiLB Prospect Scanner
+
+on:
+  schedule:
+    - cron: "0 12 * * *"  # 8 AM ET daily
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40  # scanning all of MiLB takes time
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: Run scanner
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python scanner.py
