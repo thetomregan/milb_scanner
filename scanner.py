@@ -12,10 +12,10 @@ HITTERS:
 PITCHERS (Breakout Profile):
 
 - Age <= 24
-- K/9 >= 10.0
-- BB/9 <= 3.5
+- K/9 >= 10.0 (calculated from raw counts)
+- BB/9 <= 3.5 (calculated from raw counts)
 - ERA <= 4.00
-- 15+ IP
+- 10+ IP
 
 Posts results ranked by OPS (hitters) and K-BB% (pitchers) to Discord.
 “””
@@ -24,8 +24,8 @@ import time, requests, os, sys
 from datetime import date
 
 CURRENT_YEAR = 2026
-EMBED_COLOR_HIT  = 0x2ECC71   # Green — hitters
-EMBED_COLOR_PITCH = 0x3498DB  # Blue — pitchers
+EMBED_COLOR_HIT   = 0x2ECC71
+EMBED_COLOR_PITCH = 0x3498DB
 
 SPORT_IDS = [11, 12, 13, 14, 15, 16, 17]
 SPORT_NAMES = {
@@ -42,7 +42,7 @@ MAX_AGE_HIT = 21
 
 # Pitcher filters
 
-MIN_IP      = 15.0
+MIN_IP      = 10.0
 MAX_ERA     = 4.00
 MIN_K9      = 10.0
 MAX_BB9     = 3.5
@@ -106,19 +106,7 @@ return today.year - bday.year - ((today.month, today.day) < (bday.month, bday.da
 except Exception:
 return 99
 
-def fmt(val, decimals=3):
-if val is None or val == “”:
-return “—”
-try:
-f = float(val)
-if decimals == 3:
-return “{:.3f}”.format(f).lstrip(“0”) or “.000”
-return “{:.2f}”.format(f)
-except:
-return str(val)
-
 def parse_ip(ip_str):
-“”“Convert innings pitched string (e.g. ‘23.1’) to float outs.”””
 try:
 parts = str(ip_str).split(”.”)
 full = int(parts[0])
@@ -126,6 +114,22 @@ partial = int(parts[1]) if len(parts) > 1 else 0
 return full + partial / 3.0
 except:
 return 0.0
+
+def fmt3(val):
+if val is None or val == “”:
+return “—”
+try:
+return “{:.3f}”.format(float(val)).lstrip(“0”) or “.000”
+except:
+return str(val)
+
+def fmt2(val):
+if val is None or val == “”:
+return “—”
+try:
+return “{:.2f}”.format(float(val))
+except:
+return str(val)
 
 def scan_level(sport_id):
 level_name = SPORT_NAMES.get(sport_id, str(sport_id))
@@ -174,12 +178,11 @@ for team_id in teams:
                             "name":  name,
                             "age":   age,
                             "level": level_name,
-                            "team":  "",
                             "pa":    pa,
                             "ops":   ops,
                             "bb_k":  bb_k,
-                            "slash": fmt(stat.get("avg")) + "/" + fmt(stat.get("obp")) + "/" + fmt(stat.get("slg")),
-                            "OPS":   fmt(stat.get("ops")),
+                            "slash": fmt3(stat.get("avg")) + "/" + fmt3(stat.get("obp")) + "/" + fmt3(stat.get("slg")),
+                            "OPS":   fmt3(stat.get("ops")),
                             "G":     str(stat.get("gamesPlayed", "—")),
                             "H":     str(stat.get("hits", "—")),
                             "2B":    str(stat.get("doubles", "—")),
@@ -198,40 +201,40 @@ for team_id in teams:
             if stat:
                 ip = parse_ip(stat.get("inningsPitched", 0))
                 if ip >= MIN_IP:
-                    try:
-                        era  = float(stat.get("era",  99) or 99)
-                        k9   = float(stat.get("strikeoutsPer9Inn", 0) or 0)
-                        bb9  = float(stat.get("walksPer9Inn", 99) or 99)
-                    except:
-                        continue
-
-                    # Compute K-BB% approximation from raw counts
+                    # Calculate rates from raw counts
                     so_total = int(stat.get("strikeOuts", 0) or 0)
                     bb_total = int(stat.get("baseOnBalls", 0) or 0)
                     bf_total = int(stat.get("battersFaced", 1) or 1)
+                    k9  = (so_total / ip) * 9 if ip > 0 else 0
+                    bb9 = (bb_total / ip) * 9 if ip > 0 else 99
                     k_bb_pct = (so_total - bb_total) / bf_total if bf_total > 0 else 0
+
+                    try:
+                        era = float(stat.get("era", 99) or 99)
+                    except:
+                        era = 99
 
                     if era <= MAX_ERA and k9 >= MIN_K9 and bb9 <= MAX_BB9:
                         pitchers.append({
-                            "name":     name,
-                            "age":      age,
-                            "level":    level_name,
-                            "ip":       ip,
-                            "k_bb_pct": k_bb_pct,
-                            "ERA":      fmt(stat.get("era"), 2),
-                            "WHIP":     fmt(stat.get("whip"), 2),
-                            "IP":       str(stat.get("inningsPitched", "—")),
-                            "K9":       fmt(stat.get("strikeoutsPer9Inn"), 2),
-                            "BB9":      fmt(stat.get("walksPer9Inn"), 2),
-                            "SO":       str(so_total),
-                            "BB":       str(bb_total),
-                            "HR":       str(stat.get("homeRuns", "—")),
-                            "W":        str(stat.get("wins", "—")),
-                            "L":        str(stat.get("losses", "—")),
-                            "G":        str(stat.get("gamesPlayed", "—")),
-                            "GS":       str(stat.get("gamesStarted", "—")),
-                            "SV":       str(stat.get("saves", "—")),
-                            "k_bb_pct_str": "{:.1f}".format(k_bb_pct * 100) + "%",
+                            "name":        name,
+                            "age":         age,
+                            "level":       level_name,
+                            "ip":          ip,
+                            "k_bb_pct":    k_bb_pct,
+                            "k_bb_pct_str": "{:.1f}%".format(k_bb_pct * 100),
+                            "ERA":         fmt2(stat.get("era")),
+                            "WHIP":        fmt2(stat.get("whip")),
+                            "IP":          str(stat.get("inningsPitched", "—")),
+                            "K9":          fmt2(k9),
+                            "BB9":         fmt2(bb9),
+                            "SO":          str(so_total),
+                            "BB":          str(bb_total),
+                            "HR":          str(stat.get("homeRuns", "—")),
+                            "W":           str(stat.get("wins", "—")),
+                            "L":           str(stat.get("losses", "—")),
+                            "G":           str(stat.get("gamesPlayed", "—")),
+                            "GS":          str(stat.get("gamesStarted", "—")),
+                            "SV":          str(stat.get("saves", "—")),
                         })
 
     time.sleep(0.3)
@@ -244,8 +247,7 @@ def build_hitter_field(p):
 return {
 “name”: “🟢 “ + p[“name”] + “ (” + str(p[“age”]) + “) · “ + p[“level”],
 “value”: “\n”.join([
-“**” + p[“slash”] + “** | OPS: **” + p[“OPS”] + “** | BB/K: **” + “{:.2f}”.format(p[“bb_k”]) + “**”,
-p.get(“team”, “—”),
+“**” + p[“slash”] + “** | OPS: **” + p[“OPS”] + “** | BB/K: **” + fmt2(p[“bb_k”]) + “**”,
 “G:” + p[“G”] + “  PA:” + str(p[“pa”]) + “  H:” + p[“H”] +
 “  2B:” + p[“2B”] + “  3B:” + p[“3B”] + “  HR:” + p[“HR”],
 “RBI:” + p[“RBI”] + “  BB:” + p[“BB”] + “  K:” + p[“SO”] + “  SB:” + p[“SB”],
@@ -267,60 +269,38 @@ return {
 }
 
 def post_section(webhook_url, title, description, fields, color):
-“”“Post a titled section + player fields to Discord.”””
-header = {
-“embeds”: [{
-“title”: title,
-“description”: description,
-“color”: color,
-}]
-}
-r = requests.post(webhook_url, json=header, timeout=15)
-if r.status_code not in (200, 204):
-print(“Header post failed: “ + str(r.status_code))
+header = {“embeds”: [{“title”: title, “description”: description, “color”: color}]}
+requests.post(webhook_url, json=header, timeout=15)
 time.sleep(1)
-
-```
-chunks = [fields[i:i+25] for i in range(0, len(fields), 25)]
-for chunk in chunks:
-    payload = {"embeds": [{"color": color, "fields": chunk}]}
-    r = requests.post(webhook_url, json=payload, timeout=15)
-    if r.status_code not in (200, 204):
-        raise Exception("Discord post failed: " + str(r.status_code) + " — " + r.text)
-    time.sleep(1)
-```
+for chunk in [fields[i:i+25] for i in range(0, len(fields), 25)]:
+r = requests.post(webhook_url, json={“embeds”: [{“color”: color, “fields”: chunk}]}, timeout=15)
+if r.status_code not in (200, 204):
+raise Exception(“Discord post failed: “ + str(r.status_code))
+time.sleep(1)
 
 def post_to_discord(webhook_url, all_hitters, all_pitchers):
 today = date.today().strftime(”%A, %B %-d, %Y”)
 
 ```
-# ── HITTERS ──────────────────────────────────────
 all_hitters.sort(key=lambda x: x["ops"], reverse=True)
 if all_hitters:
-    fields = [build_hitter_field(p) for p in all_hitters]
-    post_section(
-        webhook_url,
+    post_section(webhook_url,
         "🟢 MiLB Breakout Hitters — " + today,
         "**" + str(len(all_hitters)) + " players** · Age ≤21 · OPS ≥.850 · BB/K ≥0.75 · 50+ PA · Ranked by OPS",
-        fields,
-        EMBED_COLOR_HIT,
-    )
+        [build_hitter_field(p) for p in all_hitters],
+        EMBED_COLOR_HIT)
 else:
     requests.post(webhook_url, json={"embeds": [{"title": "🟢 MiLB Breakout Hitters — " + today,
         "description": "No qualifiers today.", "color": EMBED_COLOR_HIT}]}, timeout=15)
     time.sleep(1)
 
-# ── PITCHERS ─────────────────────────────────────
 all_pitchers.sort(key=lambda x: x["k_bb_pct"], reverse=True)
 if all_pitchers:
-    fields = [build_pitcher_field(p) for p in all_pitchers]
-    post_section(
-        webhook_url,
+    post_section(webhook_url,
         "🔵 MiLB Breakout Pitchers — " + today,
-        "**" + str(len(all_pitchers)) + " players** · Age ≤24 · K/9 ≥10.0 · BB/9 ≤3.5 · ERA ≤4.00 · 15+ IP · Ranked by K-BB%",
-        fields,
-        EMBED_COLOR_PITCH,
-    )
+        "**" + str(len(all_pitchers)) + " players** · Age ≤24 · K/9 ≥10.0 · BB/9 ≤3.5 · ERA ≤4.00 · 10+ IP · Ranked by K-BB%",
+        [build_pitcher_field(p) for p in all_pitchers],
+        EMBED_COLOR_PITCH)
 else:
     requests.post(webhook_url, json={"embeds": [{"title": "🔵 MiLB Breakout Pitchers — " + today,
         "description": "No qualifiers today.", "color": EMBED_COLOR_PITCH}]}, timeout=15)
@@ -335,9 +315,7 @@ sys.exit(1)
 
 ```
 print("Starting MiLB scanner for " + str(CURRENT_YEAR) + "...")
-
-all_hitters  = []
-all_pitchers = []
+all_hitters, all_pitchers = [], []
 
 for sport_id in SPORT_IDS:
     h, p = scan_level(sport_id)
@@ -345,9 +323,8 @@ for sport_id in SPORT_IDS:
     all_pitchers.extend(p)
     time.sleep(1)
 
-print("\nTotal hitters: " + str(len(all_hitters)))
+print("Total hitters: " + str(len(all_hitters)))
 print("Total pitchers: " + str(len(all_pitchers)))
-
 post_to_discord(webhook_url, all_hitters, all_pitchers)
 print("Done!")
 ```
